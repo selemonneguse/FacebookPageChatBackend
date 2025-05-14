@@ -1,5 +1,6 @@
 package com.example.backend.services;
 
+import com.example.backend.controllers.MainController;
 import com.example.backend.utils.GeminiAiService;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -9,7 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 
 /**
@@ -27,6 +29,7 @@ public class FacebookService {
     @Value("${page.access.token}")
     private String pageAccessToken;
 
+    private static final Logger logger = LoggerFactory.getLogger(MainController.class);
     private final RestTemplate restTemplate = new RestTemplate();
     private final Gson gson = new Gson();
     private final GeminiAiService geminiAiService;
@@ -36,9 +39,15 @@ public class FacebookService {
     }
 
     /**
-     * Posts a text message to Facebook page
+     * Posts a generated message to a Facebook page using the Graph API.
+     * The method uses the `generateUniqueFacebookPost` function to generate
+     * a new posts message and sends it to the specified Facebook page.
+     * On success, it returns a response containing the posted message.
+     * On failure, it returns an error message and additional details.
      *
-     * @return Response map with post status and message
+     * @return A map containing the result of the operation.
+     *         If the operation is successful, the map contains keys "success" (true) and "message" (the posted content).
+     *         If the operation fails, the map contains keys "error" (error description) and optionally "details" (additional failure information).
      */
     public Map<String, Object> postToFacebook() {
         try {
@@ -69,7 +78,7 @@ public class FacebookService {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error processing post request", e);
             return Map.of("error", "Server error", "message", e.getMessage());
         }
     }
@@ -111,7 +120,7 @@ public class FacebookService {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error processing upload photo request", e);
             return Map.of("error", "Server error", "message", e.getMessage());
         }
     }
@@ -147,7 +156,7 @@ public class FacebookService {
     /**
      * Retrieves existing posts from a Facebook page
      *
-     * @return List of existing post messages
+     * @return List of existing posts message
      */
     private List<String> getExistingPagePosts() {
         String url = "https://graph.facebook.com/v22.0/" + pageId + "/feed?access_token=" + pageAccessToken;
