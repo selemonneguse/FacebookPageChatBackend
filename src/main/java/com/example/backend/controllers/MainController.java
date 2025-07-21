@@ -1,16 +1,33 @@
 package com.example.backend.controllers;
 
+import com.example.backend.entity.PageData;
 import com.example.backend.services.FacebookService;
 import com.example.backend.services.CloudinaryService;
 import com.example.backend.utils.GeminiAiService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.servlet.http.Cookie;
 
 
 /**
@@ -28,9 +45,13 @@ import org.slf4j.LoggerFactory;
 public class MainController {
 
     private static final Logger logger = LoggerFactory.getLogger(MainController.class);
+
     private final FacebookService facebookService;
     private final GeminiAiService geminiAiService;
     private final CloudinaryService cloudinaryService;
+
+    @Autowired
+    private TaskScheduler taskScheduler;
 
     public MainController(FacebookService facebookService, GeminiAiService geminiAiService, CloudinaryService cloudinaryService) {
         this.facebookService = facebookService;
@@ -49,19 +70,22 @@ public class MainController {
      *         - "error": a description of any error, if an issue occurs.
      */
     @PostMapping("")
-    public ResponseEntity<Map<String, Object>> handleChatRequest(@RequestBody Map<String, Object> payload) {
+    public ResponseEntity<Map<String, Object>> handleChatRequest(@RequestBody Map<String, Object> payload, HttpServletRequest request) {
         try {
+
+            HttpSession session = request.getSession(false);
+            System.out.println("🔍 POST - Session object: " + session);
+
             Object messagesObj = payload.get("messages");
-            if (!(messagesObj instanceof List<?>)) {
-                logger.warn("Invalid messages format received in payload");
-                return ResponseEntity.badRequest().body(Map.of("error", "Invalid messages format"));
-            }
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> messages = (List<Map<String, Object>>) messagesObj;
 
             String userText = extractLastUserMessage(messages);
-            if (userText == null) {
+
+            AtomicReference<String> dateRef = new AtomicReference<>();
+
+            if (userText == null || !(messagesObj instanceof List<?>) || session == null) {
                 logger.warn("No valid user message found in the request");
                 return ResponseEntity.badRequest().body(Map.of("error", "No valid user message found"));
             }
@@ -69,7 +93,8 @@ public class MainController {
             // Check if the user wants to post to Facebook
             if (geminiAiService.isPostIntent(userText)) {
                 logger.debug("Post intent detected, attempting to post to Facebook");
-                Map<String, Object> fbResponse = facebookService.postToFacebook();
+                Map<String, Object> fbResponse = facebookService.postToFacebook(session);
+
                 if (Boolean.TRUE.equals(fbResponse.get("success"))) {
                     logger.info("Successfully posted to Facebook");
                     return ResponseEntity.ok(Map.of("reply", "Post uploaded successfully! Message: " + fbResponse.get("message")));
@@ -77,7 +102,32 @@ public class MainController {
                     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .body(Map.of("reply", "Post upload failed!", "error", fbResponse));
                 }
+            } else if (geminiAiService.isScheduledPostIntent(userText, dateRef)) {
+                String dateString = dateRef.get();
+                try {
+                    // נניח שהפורמט הוא: "2025-07-03 14:30"
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+                    LocalDateTime scheduledDateTime = LocalDateTime.parse(dateString, formatter);
+
+                    // המשימה שתתבצע בזמן המתוזמן
+                    Runnable task = () -> {
+                        System.out.println("🕒 Scheduled post triggered at: " + LocalDateTime.now());
+                        facebookService.postToFacebook(session);
+                    };
+
+                    // תרגום הזמן ל־java.util.Date עבור המתזמן
+                    Date executionTime = Date.from(scheduledDateTime.atZone(ZoneId.systemDefault()).toInstant());
+
+                    // תזמון המשימה
+                    taskScheduler.schedule(task, executionTime);
+
+                    System.out.println("✅ Post scheduled for: " + scheduledDateTime);
+
+                } catch (DateTimeParseException e) {
+                    System.err.println("⚠️ תאריך לא תקין: " + dateString);
+                }
             }
+
 
             // Generate text response using Gemini AI
             String reply = geminiAiService.generateText(messages);
@@ -101,17 +151,16 @@ public class MainController {
      *         - On failure: A map containing error details with appropriate HTTP status codes.
      */
     @PostMapping("/upload")
-    public ResponseEntity<Map<String, Object>> handleUploadImage(@RequestParam("image") MultipartFile file) {
+    public ResponseEntity<Map<String, Object>> handleUploadImage(@RequestParam("image") MultipartFile file, HttpServletRequest request) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "No image file uploaded"));
             }
 
-
             String imageUrl = cloudinaryService.uploadImage(file);
 
-            Map<String, Object> response = facebookService.uploadPhotoToFacebook(imageUrl);
-            return ResponseEntity.ok(response);
+            Map<String, Object> reply = facebookService.uploadPhotoToFacebook(request.getSession(false), imageUrl);
+            return ResponseEntity.ok(Map.of("reply", reply));
 
         } catch (Exception e) {
             logger.error("Error processing chat request", e);
@@ -138,5 +187,63 @@ public class MainController {
             }
         }
         return null;
+    }
+
+    @PostMapping("/facebook/page-data")
+    public ResponseEntity<?> receivePageData(@RequestBody PageData data, HttpServletRequest request,  HttpServletResponse response) {
+
+        String pageId = (String) data.getPageId();
+        String pageAccessToken = (String) data.getPageAccessToken();
+
+        if (pageId == null || pageAccessToken == null) {
+            return (ResponseEntity<?>) Map.of("error", "Session does not contain pageId or pageAccessToken");
+        }
+
+        System.out.println("✔️ Saved in session pageId: " + pageId);
+        System.out.println("✔️ Saved in session pageAccessToken : " + pageAccessToken);
+
+        // צור או שלוף סשן קיים
+        HttpSession session = request.getSession(true);
+
+        // שמור מידע בסשן
+        session.setAttribute("pageId", data.getPageId());
+        session.setAttribute("pageAccessToken", data.getPageAccessToken());
+
+        // צור עוגייה עם מזהה הסשן
+        Cookie cookie = new Cookie("JSESSIONID", session.getId());
+        cookie.setPath("/");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setMaxAge(60 * 60 * 24 * 30); // חודש
+        response.addCookie(cookie);
+
+        System.out.println("✔️ Saved session with ID: " + session.getId());
+
+        return ResponseEntity.ok("Session created and cookie sent");
+    }
+
+    @GetMapping("/facebook/check-session")
+    public ResponseEntity<?> checkSession(HttpServletRequest request) {
+
+        System.out.println("🔍 GET /check-session - Cookies: " + Arrays.toString(request.getCookies()));
+        System.out.println("🔍 GET - Session ID from request: " + request.getRequestedSessionId());
+        System.out.println("🔍 GET - User-Agent: " + request.getHeader("User-Agent"));
+        System.out.println("🔍 GET - Origin: " + request.getHeader("Origin"));
+
+        HttpSession session = request.getSession(false);
+        System.out.println("🔍 GET - Session object: " + session);
+
+        if (session == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("No session");
+        }
+
+        String pageId = (String) session.getAttribute("pageId");
+        String token = (String) session.getAttribute("pageAccessToken");
+
+        if (pageId == null || token == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Session found, but missing data");
+        }
+
+        return ResponseEntity.ok("Welcome back!");
     }
 }

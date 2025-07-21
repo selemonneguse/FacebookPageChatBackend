@@ -8,6 +8,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * This service is responsible for interacting with the Gemini AI API to generate
@@ -116,5 +117,28 @@ public class GeminiAiService {
             return false;
         }
     }
+
+    public boolean isScheduledPostIntent(String message, AtomicReference<String> scheduledDateHolder) {
+        try {
+            String prompt = "Does the following message indicate that the user wants to schedule a Facebook post? " +
+                    "If yes, reply only with the scheduled date (e.g., '2025-07-03 14:00'). If not, reply only with 'false'.\n\nMessage: \"" + message + "\"";
+
+            List<Map<String, Object>> aiMessage = createSingleUserMessage(prompt);
+            String response = generateText(aiMessage);
+
+            String result = response.trim();
+            if (result.equalsIgnoreCase("false")) {
+                return false;
+            }
+
+            // Save the date into the reference
+            scheduledDateHolder.set(result);
+            return true;
+        } catch (Exception e) {
+            System.err.println("⚠️ Error while checking scheduled post intent with AI: " + e.getMessage());
+            return false;
+        }
+    }
+
 
 }

@@ -1,11 +1,15 @@
 package com.example.backend.services;
 
+import com.example.backend.entity.PageData;
 import com.example.backend.controllers.MainController;
+//import com.example.backend.repository.FacebookPageRepository;
 import com.example.backend.utils.GeminiAiService;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -23,19 +27,18 @@ import java.util.*;
 @Service
 public class FacebookService {
 
-    @Value("${page.id}")
-    private String pageId;
-
-    @Value("${page.access.token}")
-    private String pageAccessToken;
+    @Autowired
+//    private FacebookPageRepository repository;
 
     private static final Logger logger = LoggerFactory.getLogger(MainController.class);
     private final RestTemplate restTemplate = new RestTemplate();
     private final Gson gson = new Gson();
     private final GeminiAiService geminiAiService;
 
+
     public FacebookService(GeminiAiService geminiAiService) {
         this.geminiAiService = geminiAiService;
+//        this.repository = repository;
     }
 
     /**
@@ -49,9 +52,16 @@ public class FacebookService {
      *         If the operation is successful, the map contains keys "success" (true) and "message" (the posted content).
      *         If the operation fails, the map contains keys "error" (error description) and optionally "details" (additional failure information).
      */
-    public Map<String, Object> postToFacebook() {
+    public Map<String, Object> postToFacebook(HttpSession session) {
         try {
-            String generatedMessage = generateUniqueFacebookPost();
+            String pageId = (String) session.getAttribute("pageId");
+            String pageAccessToken = (String) session.getAttribute("pageAccessToken");
+
+            if (pageId == null || pageAccessToken == null) {
+                return Map.of("error", "Missing pageId or pageAccessToken from session.");
+            }
+
+            String generatedMessage = generateUniqueFacebookPost(session);
             if (generatedMessage == null) {
                 return Map.of("error", "Failed to generate a unique post message.");
             }
@@ -89,13 +99,20 @@ public class FacebookService {
      * @param imageUrl URL of the image to upload
      * @return Response map with upload status
      */
-    public Map<String, Object> uploadPhotoToFacebook(String imageUrl) {
+    public Map<String, Object> uploadPhotoToFacebook(HttpSession session, String imageUrl) {
         try {
+            String pageId = (String) session.getAttribute("pageId");
+            String pageAccessToken = (String) session.getAttribute("pageAccessToken");
+
+            if (pageId == null || pageAccessToken == null) {
+                return Map.of("error", "Missing pageId or pageAccessToken from session.");
+            }
+
             if (imageUrl == null) {
                 return Map.of("error", "No image URL provided");
             }
 
-            String generatedMessage = generateUniqueFacebookPost();
+            String generatedMessage = generateUniqueFacebookPost(session);
             if (generatedMessage == null) {
                 return Map.of("error", "Failed to generate a unique post message.");
             }
@@ -130,10 +147,18 @@ public class FacebookService {
      *
      * @return Unique text for a Facebook post
      */
-    private String generateUniqueFacebookPost() {
+    private String generateUniqueFacebookPost(HttpSession session) {
         try {
+
+            String pageId = (String) session.getAttribute("pageId");
+            String pageAccessToken = (String) session.getAttribute("pageAccessToken");
+
+            if (pageId == null || pageAccessToken == null) {
+                return "Missing pageId or pageAccessToken from session.";
+            }
+
             // Step 1: Get existing posts from the page
-            List<String> existingMessages = getExistingPagePosts();
+            List<String> existingMessages = getExistingPagePosts(session);
             System.out.println("Existing messages on page " + pageId + ": " + existingMessages);
 
             // Step 2: Create a prompt for the AI
@@ -148,7 +173,7 @@ public class FacebookService {
             return textSentence;
 
         } catch (Exception e) {
-            System.err.println("Error generating unique Facebook post for page " + pageId + ": " + e.getMessage());
+            System.err.println("Error generating unique Facebook post for pageId" + e.getMessage());
             return null;
         }
     }
@@ -158,7 +183,15 @@ public class FacebookService {
      *
      * @return List of existing posts message
      */
-    private List<String> getExistingPagePosts() {
+    private List<String> getExistingPagePosts(HttpSession session) {
+
+        String pageId = (String) session.getAttribute("pageId");
+        String pageAccessToken = (String) session.getAttribute("pageAccessToken");
+
+        if (pageId == null || pageAccessToken == null) {
+            return null;
+        }
+
         String url = "https://graph.facebook.com/v22.0/" + pageId + "/feed?access_token=" + pageAccessToken;
         ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
         JsonObject data = gson.fromJson(response.getBody(), JsonObject.class);
@@ -178,4 +211,19 @@ public class FacebookService {
 
         return existingMessages;
     }
+
+//    public void savePageToken(String pageId, String accessToken) {
+//        PageData user = new PageData();
+//        user.setPageId(pageId);
+//        user.setPageAccessToken(accessToken);
+//        repository.save(user);
+//    }
+//
+//    public void saveOrUpdate(PageData data) {
+//        repository.save(data); // אם pageId כבר קיים – תתבצע עדכון
+//    }
+//
+//    public Optional<PageData> getPageDataById(String pageId) {
+//        return repository.findByPageId(pageId);
+//    }
 }
