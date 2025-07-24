@@ -1,8 +1,6 @@
 package com.example.backend.services;
 
-import com.example.backend.entity.PageData;
 import com.example.backend.controllers.MainController;
-//import com.example.backend.repository.FacebookPageRepository;
 import com.example.backend.utils.GeminiAiService;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -10,7 +8,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -212,18 +209,4 @@ public class FacebookService {
         return existingMessages;
     }
 
-//    public void savePageToken(String pageId, String accessToken) {
-//        PageData user = new PageData();
-//        user.setPageId(pageId);
-//        user.setPageAccessToken(accessToken);
-//        repository.save(user);
-//    }
-//
-//    public void saveOrUpdate(PageData data) {
-//        repository.save(data); // אם pageId כבר קיים – תתבצע עדכון
-//    }
-//
-//    public Optional<PageData> getPageDataById(String pageId) {
-//        return repository.findByPageId(pageId);
-//    }
 }

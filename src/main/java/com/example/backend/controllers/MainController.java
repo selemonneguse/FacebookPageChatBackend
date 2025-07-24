@@ -60,14 +60,14 @@ public class MainController {
     }
 
     /**
-     * Handles chat requests by analyzing the provided messages in the payload,
-     * responding accordingly, or performing specific actions like posting to Facebook.
+     * Handles incoming chat requests, processes user messages, and returns appropriate responses.
+     * Executes various actions based on user intent, such as posting or scheduling posts,
+     * and generates AI-driven replies.
      *
-     * @param payload The request body containing a map with the message list.
-     *                Expected key: "messages" (a list of message objects).
-     * @return A ResponseEntity containing a map with the response, which may include:
-     *         - "reply": the generated response or status update message.
-     *         - "error": a description of any error, if an issue occurs.
+     * @param payload A map containing request body data, including the list of user messages.
+     * @param request The HTTP servlet request object, used for accessing session information.
+     * @return A ResponseEntity containing a map with the response data, including generated replies,
+     *         or error messages if the processing fails.
      */
     @PostMapping("")
     public ResponseEntity<Map<String, Object>> handleChatRequest(@RequestBody Map<String, Object> payload, HttpServletRequest request) {
@@ -105,20 +105,17 @@ public class MainController {
             } else if (geminiAiService.isScheduledPostIntent(userText, dateRef)) {
                 String dateString = dateRef.get();
                 try {
-                    // נניח שהפורמט הוא: "2025-07-03 14:30"
+
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                     LocalDateTime scheduledDateTime = LocalDateTime.parse(dateString, formatter);
 
-                    // המשימה שתתבצע בזמן המתוזמן
                     Runnable task = () -> {
                         System.out.println("🕒 Scheduled post triggered at: " + LocalDateTime.now());
                         facebookService.postToFacebook(session);
                     };
 
-                    // תרגום הזמן ל־java.util.Date עבור המתזמן
                     Date executionTime = Date.from(scheduledDateTime.atZone(ZoneId.systemDefault()).toInstant());
 
-                    // תזמון המשימה
                     taskScheduler.schedule(task, executionTime);
 
                     System.out.println("✅ Post scheduled for: " + scheduledDateTime);
@@ -189,6 +186,15 @@ public class MainController {
         return null;
     }
 
+    /**
+     * Handles a POST request to save Facebook page data into the session and sets a secure session cookie.
+     *
+     * @param data the PageData object containing information about the Facebook page, such as pageId and pageAccessToken
+     * @param request the HttpServletRequest object containing request information for HTTP servlets
+     * @param response the HttpServletResponse object used to set the HTTP response
+     * @return a ResponseEntity object containing a success message or an error message if the required data is missing
+     */
+
     @PostMapping("/facebook/page-data")
     public ResponseEntity<?> receivePageData(@RequestBody PageData data, HttpServletRequest request,  HttpServletResponse response) {
 
@@ -202,14 +208,11 @@ public class MainController {
         System.out.println("✔️ Saved in session pageId: " + pageId);
         System.out.println("✔️ Saved in session pageAccessToken : " + pageAccessToken);
 
-        // צור או שלוף סשן קיים
         HttpSession session = request.getSession(true);
 
-        // שמור מידע בסשן
         session.setAttribute("pageId", data.getPageId());
         session.setAttribute("pageAccessToken", data.getPageAccessToken());
 
-        // צור עוגייה עם מזהה הסשן
         Cookie cookie = new Cookie("JSESSIONID", session.getId());
         cookie.setPath("/");
         cookie.setHttpOnly(true);
@@ -222,6 +225,15 @@ public class MainController {
         return ResponseEntity.ok("Session created and cookie sent");
     }
 
+    /**
+     * Checks the current user's session to validate its existence and required attributes.
+     * Logs session-related details such as cookies, session ID, user-agent, and origin for debugging purposes.
+     * If the session does not exist or is missing required attributes, an unauthorized response is returned.
+     *
+     * @param request the HttpServletRequest containing session and user information
+     * @return a ResponseEntity with a 200 OK status if the session is valid, or a 401 Unauthorized status if
+     *         the session is missing or incomplete
+     */
     @GetMapping("/facebook/check-session")
     public ResponseEntity<?> checkSession(HttpServletRequest request) {
 

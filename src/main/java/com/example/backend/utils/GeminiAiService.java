@@ -118,6 +118,15 @@ public class GeminiAiService {
         }
     }
 
+    /**
+     * Determines if the given message indicates a scheduled Facebook post intent.
+     * If the message is identified as a scheduling intent, the scheduled date is stored in the provided reference.
+     *
+     * @param message The content of the message to be analyzed for scheduling intent.
+     * @param scheduledDateHolder A reference to hold the scheduled date if the message indicates a scheduling intent.
+     *                             The date will be formatted as 'yyyy-MM-dd HH:mm'.
+     * @return true if the message indicates a scheduled post intent, false otherwise.
+     */
     public boolean isScheduledPostIntent(String message, AtomicReference<String> scheduledDateHolder) {
         try {
             String prompt = "Does the following message indicate that the user wants to schedule a Facebook post? " +
