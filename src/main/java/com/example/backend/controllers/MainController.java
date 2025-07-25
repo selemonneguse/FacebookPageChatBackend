@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.TaskScheduler;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -90,24 +89,18 @@ public class MainController {
                 return ResponseEntity.badRequest().body(Map.of("error", "No valid user message found"));
             }
 
-            // Check if the user wants to post to Facebook
-            if (geminiAiService.isPostIntent(userText)) {
-                logger.debug("Post intent detected, attempting to post to Facebook");
-                Map<String, Object> fbResponse = facebookService.postToFacebook(session);
-
-                if (Boolean.TRUE.equals(fbResponse.get("success"))) {
-                    logger.info("Successfully posted to Facebook");
-                    return ResponseEntity.ok(Map.of("reply", "Post uploaded successfully! Message: " + fbResponse.get("message")));
-                } else {
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                            .body(Map.of("reply", "Post upload failed!", "error", fbResponse));
-                }
-            } else if (geminiAiService.isScheduledPostIntent(userText, dateRef)) {
+            // Check if the user wants to schedule a post to Facebook
+            if (geminiAiService.isScheduledPostIntent(userText, dateRef)) {
                 String dateString = dateRef.get();
                 try {
 
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                     LocalDateTime scheduledDateTime = LocalDateTime.parse(dateString, formatter);
+                    LocalDateTime now = LocalDateTime.now();
+
+                    if (scheduledDateTime.isBefore(now)) {
+                        return ResponseEntity.ok(Map.of("reply", "Cannot schedule a post in the past. Please choose a future time."));
+                    }
 
                     Runnable task = () -> {
                         System.out.println("🕒 Scheduled post triggered at: " + LocalDateTime.now());
@@ -120,8 +113,23 @@ public class MainController {
 
                     System.out.println("✅ Post scheduled for: " + scheduledDateTime);
 
+                    return ResponseEntity.ok(Map.of("reply", "Post scheduled for: " + scheduledDateTime));
+
                 } catch (DateTimeParseException e) {
                     System.err.println("⚠️ תאריך לא תקין: " + dateString);
+                }
+            }
+            // Check if the user wants to post to Facebook
+             else if (geminiAiService.isPostIntent(userText)) {
+                logger.debug("Post intent detected, attempting to post to Facebook");
+                Map<String, Object> fbResponse = facebookService.postToFacebook(session);
+
+                if (Boolean.TRUE.equals(fbResponse.get("success"))) {
+                    logger.info("Successfully posted to Facebook");
+                    return ResponseEntity.ok(Map.of("reply", "Post uploaded successfully! Message: " + fbResponse.get("message")));
+                } else {
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(Map.of("reply", "Post upload failed!", "error", fbResponse));
                 }
             }
 
@@ -198,8 +206,8 @@ public class MainController {
     @PostMapping("/facebook/page-data")
     public ResponseEntity<?> receivePageData(@RequestBody PageData data, HttpServletRequest request,  HttpServletResponse response) {
 
-        String pageId = (String) data.getPageId();
-        String pageAccessToken = (String) data.getPageAccessToken();
+        String pageId = data.getPageId();
+        String pageAccessToken = data.getPageAccessToken();
 
         if (pageId == null || pageAccessToken == null) {
             return (ResponseEntity<?>) Map.of("error", "Session does not contain pageId or pageAccessToken");

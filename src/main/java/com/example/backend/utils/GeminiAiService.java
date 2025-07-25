@@ -76,7 +76,7 @@ public class GeminiAiService {
      * @return A prompt to send to Gemini AI
      */
     public String createUniquePostPrompt(List<String> existingMessages) {
-        return "Give me a clear short sentence to post on a Facebook page that is different from these existing sentences: \"" +
+        return "Give me a clear, short sentence to post on a Facebook page for a coffee business that is different from these existing sentences: \"" +
                 String.join("\", \"", existingMessages) + "\"";
     }
 
